@@ -182,3 +182,113 @@ resource "aws_route_table_association" "databricks_route_to_PrivateSubnet3" {
   route_table_id = aws_route_table.databricks_private_route_table.id
 }
 # The S3 gateway endpoint
+resource "aws_vpc_endpoint" "databricks_s3_gateway_endpoint" {
+  vpc_id       = aws_vpc.databricks_vpc.id
+  vpc_endpoint_type = "Gateway"
+  service_name = "com.amazonaws${var.AWSRegion}.s3"
+  route_table_ids = [aws_route_table.databricks_private_route_table.id]
+}
+# The security group for the workspace
+resource "aws_security_group" "databricks_Workspace_SecurityGroup" {
+  name = "${var.WorkspaceName}-DBSWorkspaceSG"
+  vpc_id = aws_vpc.databricks_vpc.id
+  description = "Allow access from within the same security group"
+  tags = {
+    Key = "Databricks"
+    Value = "${var.WorkspaceName}-Workspace_SecurityGroup"
+  }
+}
+# Allow all access from the same security group
+resource "aws_security_group_rule" "databricks_sg_TcpIngress" {
+  description       = "Allow all tcp inbound access from the same security group"
+  type              = "ingress"
+  from_port         = 0
+  to_port           = 65535
+  protocol          = "tcp"
+  security_group_id = aws_security_group.databricks_Workspace_SecurityGroup.id
+  source_security_group_id = aws_security_group.databricks_Workspace_SecurityGroup.id
+}
+resource "aws_security_group_rule" "databricks_sg_UdpIngress" {
+  description       = "Allow all udp inbound access from the same security group"
+  type              = "ingress"
+  from_port         = 0
+  to_port           = 65535
+  protocol          = "udp"
+  security_group_id = aws_security_group.databricks_Workspace_SecurityGroup.id
+  source_security_group_id = aws_security_group.databricks_Workspace_SecurityGroup.id
+}
+resource "aws_security_group_rule" "databricks_sg_TcpEgress" {
+  description       = "Allow all tcp output access from the same security group"
+  type              = "egress"
+  from_port         = 0
+  to_port           = 65535
+  protocol          = "tcp"
+  security_group_id = aws_security_group.databricks_Workspace_SecurityGroup.id
+  source_security_group_id = aws_security_group.databricks_Workspace_SecurityGroup.id
+}
+resource "aws_security_group_rule" "databricks_sg_UdpEgress" {
+  description       = "Allow all udp output access from the same security group"
+  type              = "egress"
+  from_port         = 0
+  to_port           = 65535
+  protocol          = "udp"
+  security_group_id = aws_security_group.databricks_Workspace_SecurityGroup.id
+  source_security_group_id = aws_security_group.databricks_Workspace_SecurityGroup.id
+}
+resource "aws_security_group_rule" "databricks_sg_HttpsEgress" {
+  description       = "Allow accessing Databricks infrastructure, cloud data sources, and library repositories"
+  type              = "egress"
+  cidr_blocks       = ["0.0.0.0/0"]
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  security_group_id = aws_security_group.databricks_Workspace_SecurityGroup.id
+}
+resource "aws_security_group_rule" "databricks_MetastoreEgress" {
+  description       = "Allow accessing the Databricks metastore"
+  type              = "egress"
+  cidr_blocks       = ["0.0.0.0/0"]
+  from_port         = 3306
+  to_port           = 3306
+  protocol          = "tcp"
+  security_group_id = aws_security_group.databricks_Workspace_SecurityGroup.id
+}
+
+  # The STS VPC endpoint
+data "aws_iam_policy_document""databricks_sts_policy"{
+              statement {
+                actions = ["sts:AssumeRole",
+                           "sts:GetAccessKeyInfo",
+                           "sts:GetSessionToken",
+                           "sts:DecodeAuthorizationMessage",
+                           "sts:TagSession"]
+                resources = ["*"]
+                effect = "Allow"
+                
+                principals  {
+                          type = "AWS"
+                          identifiers = ["${var.AccountId}"]
+                          }
+              }
+}
+
+resource "aws_vpc_endpoint" "databricks_STS_VPC_endpoint" {
+    service_name = "com.amazonaws.${var.AWSRegion}.sts"
+    vpc_endpoint_type  = "Interface"
+    vpc_id = aws_vpc.databricks_vpc.id
+    private_dns_enabled  = "true"
+    security_group_ids = [aws_security_group.databricks_Workspace_SecurityGroup.id]
+    subnet_ids = [aws_subnet.databricks_subnet_public1.id,
+                  aws_subnet.databricks_subnet_public2.id,
+                  aws_subnet.databricks_subnet_public3.id]
+    policy = data.aws_iam_policy_document.databricks_sts_policy.json
+              # {
+              #   actions =["sts:AssumeRole",
+              #             "sts:GetSessionToken",
+              #             "sts:TagSession"]
+              #   principle = 
+              #   resource = "*"
+              #   effect = "Allow"
+              # }
+              
+  }
