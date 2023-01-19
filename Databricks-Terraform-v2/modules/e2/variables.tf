@@ -1,46 +1,36 @@
 
 variable "databricks_account_username" {
-    description = "Your case-sensitive Databricks account email address."
-    type = string
-    default = "sasixil602@themesw.com"
-  
+    type = string 
 }
 
 variable "databricks_account_password"{
-    description = "This is the password you set for your Databricks account."
-    type = string
-    default = "nw1sg6yk12019Q2!"
-  
+    type = string 
 }
 
 variable "databricks_account_id"  {
-    description = "Find your account ID at https://accounts.cloud.databricks.com"
     type = string
-    default = "963144b7-b3c7-4b1d-8394-d5e86611edc4"
 }
 
-
 variable "tags" {
-  default ={ 
-    Key:"Terraform"
-    Value:"Databricks"
-  }
+    type = any
 }
 
 variable "cidr_block" {
-  default = "10.4.0.0/16"
+    type = string
 }
 
 variable "region" {
-  default = "ap-northeast-1"
+    type = string
+}
+variable "prefix" {
+  type = string
 }
 
-resource "random_string" "naming" {
-  special = false
-  upper   = false
-  length  = 6
+variable "workspace_name" {
+  type = string
 }
 
 locals {
-  prefix = "jay-databricks"
-}
+  prefix = "e2"
+  }
+

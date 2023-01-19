@@ -1,28 +1,37 @@
-terraform {
-  required_providers {
-    databricks = {
-      source = "databricks/databricks"
-    }
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 4.15.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.region
-}
-
-// initialize provider in "MWS" mode to provision new workspace
-provider "databricks" {
-  alias    = "mws"
-  host     = "https://accounts.cloud.databricks.com"
-  username = var.databricks_account_username
-  password = var.databricks_account_password
-}
-
-
+// e2 
 module "e2" {
-             source = "./modules/e2"
-             }
+  source                       = "./modules/e2"
+  databricks_account_username  = var.databricks_account_username
+  databricks_account_password  = var.databricks_account_password
+  databricks_account_id        = var.databricks_account_id
+  tags                         = var.tags
+  cidr_block                   = var.cidr_block
+  region                       = var.region
+  prefix                       = var.prefix
+  workspace_name               = var.workspace_name
+}
+
+#module "create_workspace"{
+#  source                       = "./modules/create_workspace"
+#  workspace_name               = var.workspace_name
+#  databricks_account_username  = var.databricks_account_username
+#  databricks_account_password  = var.databricks_account_password
+#  databricks_account_id        = var.databricks_account_id
+#  tags                         = var.tags
+#}
+
+  #module "unity_catalog" {
+  #  source                       =  "./modules/unity_catalog"
+  #  databricks_account_username  = var.databricks_account_username
+  #  databricks_account_password  = var.databricks_account_password
+  #  databricks_account_id        = var.databricks_account_id
+  #  databricks_workspace_url     =  
+  #  aws_account_id               = 
+  #  tags                         = var.tags
+  #  region                       = var.region
+  #  databricks_workspace_ids     = 
+  #  databricks_users             = 
+  #  databricks_metastore_admins  = 
+  #  unity_admin_group            = 
+  #}
+

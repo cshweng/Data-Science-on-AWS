@@ -1,18 +1,25 @@
-
-
 terraform {
   required_providers {
-     databricks = {
+    databricks = {
       source = "databricks/databricks"
+    }
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 4.15.0"
     }
   }
 }
 
+provider "aws" {
+  region = var.region
+}
+
+// initialize provider in "MWS" mode to provision new workspace
 provider "databricks" {
   alias    = "mws"
   host     = "https://accounts.cloud.databricks.com"
-  username = "${var.databricks_account_username}"
-  password = "${var.databricks_account_password}"
+  username = var.databricks_account_username
+  password = var.databricks_account_password
 }
 
 
@@ -23,7 +30,7 @@ data "databricks_aws_assume_role_policy" "this" {
 }
 
 resource "aws_iam_role" "cross_account_role" {
-  name               = "${local.prefix}-crossaccount"
+  name               = "${var.prefix}-${local.prefix}-crossaccount"
   assume_role_policy = data.databricks_aws_assume_role_policy.this.json
   tags               = var.tags
 }
@@ -32,7 +39,7 @@ data "databricks_aws_crossaccount_policy" "this" {
 }
 
 resource "aws_iam_role_policy" "this" {
-  name   = "${local.prefix}-policy"
+  name   = "${var.prefix}-${local.prefix}-policy"
   role   = aws_iam_role.cross_account_role.id
   policy = data.databricks_aws_crossaccount_policy.this.json
 }
@@ -41,9 +48,11 @@ resource "databricks_mws_credentials" "this" {
   provider         = databricks.mws
   account_id       = var.databricks_account_id
   role_arn         = aws_iam_role.cross_account_role.arn
-  credentials_name = "${local.prefix}-creds"
-  depends_on       = [aws_iam_role_policy.this]
+  credentials_name = "${var.prefix}-${local.prefix}-creds"
+  depends_on       = [time_sleep.wait]
 }
+
+
 
 #VPC
 data "aws_availability_zones" "available" {}
@@ -67,7 +76,7 @@ module "vpc" {
   cidrsubnet(var.cidr_block, 3, 2)]
 
   manage_default_security_group = true
-  default_security_group_name   = "${local.prefix}-sg"
+  default_security_group_name   = "${var.prefix}-${local.prefix}-sg"
 
   default_security_group_egress = [{
     cidr_blocks = "0.0.0.0/0"
@@ -94,7 +103,7 @@ module "vpc_endpoints" {
         module.vpc.private_route_table_ids,
       module.vpc.public_route_table_ids])
       tags = {
-        Name = "${local.prefix}-s3-vpc-endpoint"
+        Name = "${var.prefix}-${local.prefix}-s3-vpc-endpoint"
       }
     },
     sts = {
@@ -102,7 +111,7 @@ module "vpc_endpoints" {
       private_dns_enabled = true
       subnet_ids          = module.vpc.private_subnets
       tags = {
-        Name = "${local.prefix}-sts-vpc-endpoint"
+        Name = "${var.prefix}-${local.prefix}-sts-vpc-endpoint"
       }
     },
     kinesis-streams = {
@@ -110,7 +119,7 @@ module "vpc_endpoints" {
       private_dns_enabled = true
       subnet_ids          = module.vpc.private_subnets
       tags = {
-        Name = "${local.prefix}-kinesis-vpc-endpoint"
+        Name = "${var.prefix}-${local.prefix}-kinesis-vpc-endpoint"
       }
     },
   }
@@ -121,22 +130,24 @@ module "vpc_endpoints" {
 resource "databricks_mws_networks" "this" {
   provider           = databricks.mws
   account_id         = var.databricks_account_id
-  network_name       = "${local.prefix}-network"
+  network_name       = "${var.prefix}-${local.prefix}-network"
   security_group_ids = [module.vpc.default_security_group_id]
   subnet_ids         = module.vpc.private_subnets
   vpc_id             = module.vpc.vpc_id
 }
 
+
+
 #Root bucket
 resource "aws_s3_bucket" "root_storage_bucket" {
-  bucket = "${local.prefix}-rootbucket"
+  bucket = "${var.prefix}-${local.prefix}-rootbucket"
   acl    = "private"
   versioning {
     enabled = false
   }
   force_destroy = true
   tags = merge(var.tags, {
-    Name = "${local.prefix}-rootbucket"
+    Name = "${var.prefix}-${local.prefix}-rootbucket"
   })
 }
 
@@ -173,30 +184,41 @@ resource "databricks_mws_storage_configurations" "this" {
   provider                   = databricks.mws
   account_id                 = var.databricks_account_id
   bucket_name                = aws_s3_bucket.root_storage_bucket.bucket
-  storage_configuration_name = "${local.prefix}-storage"
+  storage_configuration_name = "${var.prefix}-${local.prefix}-storage"
 }
+
 
 #Databricks E2 Workspace
 resource "databricks_mws_workspaces" "this" {
-  provider       = databricks.mws
-  account_id     = var.databricks_account_id
-  aws_region     = var.region
-  workspace_name = local.prefix
+  provider        = databricks.mws
+  account_id      = var.databricks_account_id
+  aws_region      = var.region
+  workspace_name  = var.workspace_name
 
   credentials_id           = databricks_mws_credentials.this.credentials_id
   storage_configuration_id = databricks_mws_storage_configurations.this.storage_configuration_id
   network_id               = databricks_mws_networks.this.network_id
 
-  token {
-    comment = "Terraform"
-  }
+
+  token {}
 }
 
+
+// export host to be used by other modules
 output "databricks_host" {
   value = databricks_mws_workspaces.this.workspace_url
 }
 
+// export token for integration tests to run on
 output "databricks_token" {
   value     = databricks_mws_workspaces.this.token[0].token_value
   sensitive = true
 }
+
+resource "time_sleep" "wait" {
+  depends_on = [
+  aws_iam_role.cross_account_role]
+  create_duration = "10s"
+}
+
+
